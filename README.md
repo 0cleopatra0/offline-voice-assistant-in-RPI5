@@ -9,7 +9,7 @@ This project sets up a fully offline voice assistant on a Raspberry Pi 5 (8GB) w
 - Speech-to-Text: Converts voice input to text using Whisper.cpp.
 - LLM Response: Processes the text with Ollama’s Phi language model.
 - Text-to-Speech: Speaks the response using Espeak.
-- Audio I/O Support: Works with TRRS earphones or USB headset for both mic and speaker.
+- Audio I/O Support: Works with TRRS earphones or USB headset for both mic and speaker and speaks back the response with espeak.
 - Fully Offline: No internet required after initial model setup.
 
 
