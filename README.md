@@ -1,10 +1,10 @@
-# offline-voice-assistant-in-RPI5
+# Offline-Voice-Assistant-in-Raspberry PI 5(8GB)
 Enable seamless hands-free voice interaction on Raspberry Pi by using audio input and output.
 
-- **Porcupine** for hotword detection ("Hey Pi")  
-- **Whisper.cpp** for offline speech-to-text transcription  
-- **Ollama** with the `phi` model for natural language responses  
-- **Espeak** for text-to-speech output  
+- Porcupine for hotword detection ("Hey Pi")  
+- Whisper.cpp for offline speech-to-text transcription  
+- Ollama with the `phi` model for natural language responses  
+- Espeak for text-to-speech output  
 - Earphones or USB headset for audio input/output  
 
 ## Prerequisites
@@ -82,7 +82,6 @@ ollama pull phi
    ```
 5. Add Your Voice Assistant Python Script
 Create a Python script (e.g., voice_assistant_hotword.py) with the hotword detection, speech-to-text, LLM query, and text-to-speech logic.
-
 (Full script code provided separately)
 
 6. Run Your Voice Assistant
