@@ -1,27 +1,33 @@
-# Offline-Voice-Assistant-in-Raspberry PI 5(8GB)
+Offline-Voice-Assistant-in-Raspberry PI 5(8GB)
 Enable seamless hands-free voice interaction on Raspberry Pi by using audio input and output.
 
-- Porcupine for hotword detection ("Hey Pi")  
-- Whisper.cpp for offline speech-to-text transcription  
-- Ollama with the `phi` model for natural language responses  
-- Espeak for text-to-speech output  
-- Earphones or USB headset for audio input/output  
+Project Overview
 
-## Prerequisites
+This project sets up a fully offline voice assistant on a Raspberry Pi 5 (8GB) with the following features:
 
-### Hardware
+- Hotword Detection: Listens for the phrase "Hey Pi" using Porcupine.
+- Speech-to-Text: Converts voice input to text using Whisper.cpp.
+- LLM Response: Processes the text with Ollama’s Phi language model.
+- Text-to-Speech: Speaks the response using Espeak.
+- Audio I/O Support: Works with TRRS earphones or USB headset for both mic and speaker.
+- Fully Offline: No internet required after initial model setup.
+
+
+Prerequisites
+
+Hardware
 - Raspberry Pi 5 (8GB recommended)  
 - Microphone (built-in on USB headset or TRRS 3.5mm earphones)  
 - Speaker or earphones for audio output  
 - SD Card (32GB+ recommended)  
 - Official Raspberry Pi Power Supply  
 
-### Operating System  
+Operating System  
 - Ubuntu 24.04 LTS (64-bit) or Raspberry Pi OS Bookworm (64-bit)
 
 ---
 
-## Setup Instructions
+Setup Instructions
 1. System Update and Install Dependencies
 
 ```bash
