@@ -1,92 +1,65 @@
-import pvporcupine, pyaudio, struct, wave, subprocess, time
-from pathlib import Path
-from collections import deque
+import pvporcupine
+import pyaudio
+import struct
+import os
+import time
 
-ACCESS_KEY   = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg=="
+ACCESS_KEY = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg=="
 KEYWORD_PATH = "Hey-Raspberry-Pi_en_raspberry-pi_v3_0_0.ppn"
-WHISPER_BIN  = "./whisper.cpp/build/bin/whisper-cli"
-WHISPER_MODEL= "./whisper.cpp/models/ggml-tiny.en.bin"
-OLLAMA_MODEL = "phi"
 
-def record_until_silence(pa, silence_secs=1.0, max_secs=10, threshold=500):
-    stream = pa.open(rate=16000, channels=1, format=pyaudio.paInt16,
-                     input=True, frames_per_buffer=1024)
-    frames = []
-    silence = deque(maxlen=int(silence_secs * 16000 / 1024))
-    start = time.time()
+# Create Porcupine instance
+porcupine = pvporcupine.create(
+    access_key=ACCESS_KEY,
+    keyword_paths=[KEYWORD_PATH],
+)
 
-    print("🎙 Recording. Speak your question...")
-
-    while True:
-        audio = stream.read(1024, exception_on_overflow=False)
-        frames.append(audio)
-        pcm = struct.unpack_from("h" * (len(audio) // 2), audio)
-        silence.append(max(map(abs, pcm)) < threshold)
-
-        if all(silence) or (time.time() - start > max_secs):
-            break
-
-    stream.stop_stream(); stream.close()
-
-    path = Path("/tmp/query.wav")
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(16000)
-        wf.writeframes(b''.join(frames))
-    return path
-
-# Initialize Porcupine
-porcupine = pvporcupine.create(access_key=ACCESS_KEY, keyword_paths=[KEYWORD_PATH])
+# Set up audio stream (Mic must support 16-bit, mono, 16kHz)
 pa = pyaudio.PyAudio()
-stream = pa.open(rate=porcupine.sample_rate, channels=1, format=pyaudio.paInt16,
-                 input=True, frames_per_buffer=porcupine.frame_length)
+stream = pa.open(
+    rate=porcupine.sample_rate,
+    channels=1,
+    format=pyaudio.paInt16,
+    input=True,
+    frames_per_buffer=porcupine.frame_length
+)
 
-print("🎤 Say 'Hey Raspberry Pi' to activate...")
+print("🎤 Say 'Hey Raspberry Pi' to activate assistant...")
 
 try:
     while True:
-        audio = stream.read(porcupine.frame_length, exception_on_overflow=False)
-        pcm = struct.unpack_from("h" * porcupine.frame_length, audio)
+        pcm_data = stream.read(porcupine.frame_length, exception_on_overflow=False)
+        pcm = struct.unpack_from("h" * porcupine.frame_length, pcm_data)
 
-        if porcupine.process(pcm) >= 0:
-            print("🟢 Hotword Detected!")
+        # Print average loudness for debug
+        avg_amplitude = sum(abs(x) for x in pcm) / len(pcm)
+        print(f"🎧 Amplitude: {avg_amplitude:.2f}", end="\r")
 
-            # Record question
-            audio_path = record_until_silence(pa)
+        # Process for hotword detection
+        keyword_index = porcupine.process(pcm)
+        if keyword_index >= 0:
+            print("\n🟢 Hotword Detected! Recording your question...")
 
-            # Whisper transcription
-            subprocess.run([
-                WHISPER_BIN,
-                "-m", WHISPER_MODEL,
-                "-f", str(audio_path),
-                "--language", "en",
-                "--output-txt"
-            ], stdout=subprocess.DEVNULL)
+            os.system("arecord -f cd -t wav -d 5 -r 16000 input.wav")
 
-            text_file = audio_path.with_suffix(".txt")
-            if text_file.exists():
-                question = text_file.read_text().strip().splitlines()[-1]
-                print("🧠 You said:", question)
+            os.system("./whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f input.wav > transcript.txt")
 
-                # Get LLM response
-                print("🤖 Thinking...")
-                result = subprocess.check_output(
-                    ["ollama", "run", OLLAMA_MODEL, question], text=True
-                ).strip()
-                print("💬", result)
+            with open("transcript.txt", "r") as f:
+                lines = f.readlines()
+                question = lines[-1].strip()
 
-                # Speak response
-                subprocess.run(["espeak", result])
+            print("🧠 You said:", question)
 
-                audio_path.unlink(missing_ok=True)
-                text_file.unlink(missing_ok=True)
-            else:
-                print("⚠️ Whisper failed to transcribe.")
+            print("🤖 Thinking...")
+            response = os.popen(f"echo \"{question}\" | ollama run phi").read().strip()
+            print("💬", response)
+
+            os.system(f"espeak \"{response}\"")
+
+            os.remove("input.wav")
+            os.remove("transcript.txt")
 
 except KeyboardInterrupt:
-    print("\n👋 Exiting...")
-
+    print("\n❌ Exiting...")
 finally:
     stream.stop_stream()
     stream.close()
