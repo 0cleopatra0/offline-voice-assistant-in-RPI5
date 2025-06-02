@@ -1,98 +1,111 @@
 import pvporcupine
 import pyaudio
 import struct
-import os
+import subprocess
+import wave
 import time
+import os
+from pathlib import Path
 
-# Your Porcupine access key and keyword file
+# === CONFIGURATION ===
 ACCESS_KEY = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg=="
 KEYWORD_PATH = "Hey-Raspberry-Pi_en_raspberry-pi_v3_0_0.ppn"
+WHISPER_BIN = "./whisper.cpp/build/bin/whisper-cli"
+WHISPER_MODEL = "./whisper.cpp/models/ggml-tiny.en.bin"
+OLLAMA_MODEL = "phi"
 
-# Replace these with your actual device indexes found from step 3
-INPUT_DEVICE_INDEX = 2   # USB Mic input device index
-OUTPUT_DEVICE_INDEX = 2  # USB Speaker output device index (usually same as mic if USB combo device)
+# === AUDIO RECORDING FUNCTION ===
+def record_audio(output_path="input.wav", duration=5):
+    print("🎙 Recording your question for 5 seconds...")
+    os.system(f"arecord -f cd -t wav -d {duration} -r 16000 -c 1 {output_path}")
+    if not Path(output_path).exists():
+        print("❌ Failed to record audio.")
+        return None
+    print(f"💾 Saved recording to {output_path}")
+    return output_path
 
-print("🚀 Starting Raspberry Pi Voice Assistant...")
-print("🔑 Loading Porcupine hotword engine...")
+# === MAIN FUNCTION ===
+def main():
+    print("🚀 Starting Raspberry Pi Voice Assistant...")
+    print("🔑 Loading Porcupine hotword engine...")
 
-# Initialize Porcupine
-porcupine = pvporcupine.create(
-    access_key=ACCESS_KEY,
-    keyword_paths=[KEYWORD_PATH],
-)
+    porcupine = pvporcupine.create(
+        access_key=ACCESS_KEY,
+        keyword_paths=[KEYWORD_PATH]
+    )
 
-# Initialize PyAudio
-pa = pyaudio.PyAudio()
+    pa = pyaudio.PyAudio()
+    stream = pa.open(
+        rate=porcupine.sample_rate,
+        channels=1,
+        format=pyaudio.paInt16,
+        input=True,
+        frames_per_buffer=porcupine.frame_length
+    )
 
-print(f"🎤 Opening audio input device index {INPUT_DEVICE_INDEX} for hotword detection...")
+    print("🎤 Say 'Hey Raspberry Pi' to activate...\n")
 
-stream = pa.open(
-    rate=porcupine.sample_rate,
-    channels=1,
-    format=pyaudio.paInt16,
-    input=True,
-    input_device_index=INPUT_DEVICE_INDEX,
-    frames_per_buffer=porcupine.frame_length
-)
+    try:
+        while True:
+            audio_data = stream.read(porcupine.frame_length, exception_on_overflow=False)
+            pcm = struct.unpack_from("h" * porcupine.frame_length, audio_data)
 
-print("🎤 Say 'Hey Raspberry Pi' to activate assistant...")
+            result = porcupine.process(pcm)
+            if result >= 0:
+                print("\n🟢 Hotword Detected!")
 
-try:
-    while True:
-        pcm_data = stream.read(porcupine.frame_length, exception_on_overflow=False)
-        pcm = struct.unpack_from("h" * porcupine.frame_length, pcm_data)
+                # Step 1: Record
+                wav_path = record_audio()
+                if not wav_path:
+                    continue
 
-        # Optionally print audio amplitude to check mic input level
-        avg_amplitude = sum(abs(x) for x in pcm) / len(pcm)
-        print(f"🎧 Listening... Audio amplitude: {avg_amplitude:.2f}", end="\r")
+                # Step 2: Transcribe
+                print("📝 Transcribing with Whisper.cpp...")
+                subprocess.run([
+                    WHISPER_BIN,
+                    "-m", WHISPER_MODEL,
+                    "-f", wav_path,
+                    "--output-txt"
+                ], stdout=subprocess.DEVNULL)
 
-        # Detect hotword
-        keyword_index = porcupine.process(pcm)
-        if keyword_index >= 0:
-            print("\n🟢 Hotword Detected! Recording your question for 5 seconds...")
+                transcript_path = Path("input.txt")
+                if not transcript_path.exists():
+                    print("❌ Transcription failed.")
+                    continue
 
-            # Record audio using arecord from correct device
-            record_cmd = f"arecord -D hw:{INPUT_DEVICE_INDEX},0 -f cd -d 5 -r 16000 input.wav"
-            print(f"🎙️ Running command to record: {record_cmd}")
-            os.system(record_cmd)
+                question = transcript_path.read_text().strip().splitlines()[-1]
+                print("🧠 You said:", question)
 
-            print("📄 Transcribing audio with Whisper...")
-            whisper_cmd = "./whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f input.wav > transcript.txt"
-            print(f"🖥️ Running command: {whisper_cmd}")
-            os.system(whisper_cmd)
+                # Step 3: Query LLM
+                print("🤖 Thinking...")
+                try:
+                    response = subprocess.check_output(
+                        ["ollama", "run", OLLAMA_MODEL, question],
+                        text=True
+                    ).strip()
+                except subprocess.CalledProcessError:
+                    print("❌ Ollama failed to generate response.")
+                    continue
 
-            with open("transcript.txt", "r") as f:
-                lines = f.readlines()
-                if lines:
-                    question = lines[-1].strip()
-                else:
-                    question = ""
+                print("💬", response)
 
-            if question:
-                print(f"🧠 You said: {question}")
-                print("🤖 Thinking... Generating response with Ollama...")
-                response = os.popen(f"echo \"{question}\" | ollama run phi").read().strip()
-                print(f"💬 Response: {response}")
+                # Step 4: Speak
+                print("🔊 Speaking response...")
+                subprocess.run(["espeak", response])
 
-                # Use espeak to speak the response (send output to USB speaker)
-                # By default espeak uses system default audio output, which we set in .asoundrc
-                speak_cmd = f'espeak "{response}"'
-                print(f"🔊 Speaking response with command: {speak_cmd}")
-                os.system(speak_cmd)
-            else:
-                print("⚠️ Could not transcribe the audio. Please try again.")
+                # Clean up
+                Path(wav_path).unlink(missing_ok=True)
+                transcript_path.unlink(missing_ok=True)
+                print("✅ Done! Waiting for hotword...\n")
 
-            # Clean up files
-            os.remove("input.wav")
-            os.remove("transcript.txt")
+    except KeyboardInterrupt:
+        print("\n🛑 Exiting...")
 
-            print("\n🎤 Say 'Hey Raspberry Pi' to activate assistant again...")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
+        porcupine.delete()
 
-except KeyboardInterrupt:
-    print("\n❌ Exiting...")
-
-finally:
-    stream.stop_stream()
-    stream.close()
-    pa.terminate()
-    porcupine.delete()
+if __name__ == "__main__":
+    main()
