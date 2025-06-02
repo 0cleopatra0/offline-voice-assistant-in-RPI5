@@ -22,7 +22,8 @@ def record_until_silence(pa, silence_duration=1.2, max_duration=10, silence_thre
     silence = deque(maxlen=int(silence_duration * 16000 / 1024))
     start_time = time.time()
 
-    print("🎙 Recording...")
+    print("🎙 Recording started. Speak now...")
+    print("🔇 Recording will stop after silence or max duration.")
 
     while True:
         audio = stream.read(1024, exception_on_overflow=False)
@@ -42,11 +43,13 @@ def record_until_silence(pa, silence_duration=1.2, max_duration=10, silence_thre
         wf.setsampwidth(2)
         wf.setframerate(16000)
         wf.writeframes(b''.join(frames))
+
+    print(f"💾 Audio recorded to: {path}")
     return path
 
 # === MAIN LOOP ===
 def main():
-    # Initialize Porcupine
+    print("🔑 Initializing Porcupine...")
     porcupine = pvporcupine.create(
         access_key=ACCESS_KEY,
         keyword_paths=[KEYWORD_PATH]
@@ -56,7 +59,8 @@ def main():
     stream = pa.open(rate=porcupine.sample_rate, channels=1, format=pyaudio.paInt16,
                      input=True, frames_per_buffer=porcupine.frame_length)
 
-    print("🎤 Say 'Hey Raspberry Pi' to activate...")
+    print("🎤 Voice Assistant Ready!")
+    print("🛑 Say: 'Hey Raspberry Pi' to activate...\n")
 
     try:
         while True:
@@ -65,11 +69,12 @@ def main():
 
             if porcupine.process(pcm) >= 0:
                 print("🟢 Hotword Detected!")
-
+                
                 # Step 1: Record voice
                 audio_path = record_until_silence(pa)
 
                 # Step 2: Transcribe with Whisper
+                print("📝 Transcribing using Whisper.cpp...")
                 subprocess.run([
                     WHISPER_BIN,
                     "-m", WHISPER_MODEL,
@@ -84,25 +89,27 @@ def main():
                     continue
 
                 question = txt_path.read_text().strip().splitlines()[-1]
-                print("🧠 You said:", question)
+                print(f"🧠 Transcribed: \"{question}\"")
 
-                # Step 3: Get answer from LLM
-                print("🤖 Thinking...")
+                # Step 3: Query local LLM
+                print("🤖 Asking Ollama (phi)...")
                 response = subprocess.check_output(
                     ["ollama", "run", OLLAMA_MODEL, question],
                     text=True
                 ).strip()
-                print("💬", response)
+                print(f"💬 Response: {response}")
 
-                # Step 4: Speak answer
+                # Step 4: Speak response
+                print("🔊 Speaking response using espeak...")
                 subprocess.run(["espeak", response])
 
                 # Step 5: Clean up
+                print("🧹 Cleaning up temporary files...\n")
                 audio_path.unlink(missing_ok=True)
                 txt_path.unlink(missing_ok=True)
 
     except KeyboardInterrupt:
-        print("\n👋 Exiting...")
+        print("\n👋 Assistant stopped by user.")
 
     finally:
         stream.stop_stream()
@@ -112,4 +119,5 @@ def main():
 
 # === RUN ===
 if __name__ == "__main__":
+    print("🚀 Launching Raspberry Pi Voice Assistant...")
     main()
