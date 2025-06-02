@@ -37,8 +37,8 @@ class VoiceAssistant:
             # Or create a custom "Hey Pi" keyword file
             
             self.porcupine = pvporcupine.create(
-                access_key = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg=="  
-                porcupine = pvporcupine.create(access_key=access_key, keywords=["anjal"])
+                access_key = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg==", 
+                porcupine = pvporcupine.create(access_key=access_key, keywords=["anjal"]),
                   # Using built-in keyword, change to custom if you have "Hey Pi"
                 sensitivities=[0.5]  # Adjust sensitivity (0.0 to 1.0)
             )
