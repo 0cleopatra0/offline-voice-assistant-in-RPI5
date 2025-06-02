@@ -37,7 +37,7 @@ try:
             os.system("arecord -f cd -t wav -d 5 -r 16000 input.wav")
 
             # Transcribe using whisper.cpp
-            os.system("./whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f input.wav > transcript.txt")
+            os.system("../whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f input.wav > transcript.txt")
             # Extract last line of transcript
             with open("transcript.txt", "r") as f:
                 lines = f.readlines()
