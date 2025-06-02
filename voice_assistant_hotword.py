@@ -16,39 +16,66 @@ class VoiceAssistant:
         self.pa = None
         self.audio_stream = None
         self.is_running = False
+        self.wake_word = ""  # Will be set in setup_porcupine
         
         # Audio configuration
         self.sample_rate = 16000
         self.frame_length = 512
         
-        # Paths (adjust these according to your setup)
-        self.whisper_path = "../whisper.cpp/build/bin/whisper-cli"
-        self.whisper_model = "./whisper.cpp/models/ggml-tiny.en.bin"
+        # Environment-specific paths for Raspberry Pi
+        self.whisper_path = os.path.expanduser("~/whisper.cpp/build/bin/whisper-cli")
+        self.whisper_model = os.path.expanduser("~/whisper.cpp/models/ggml-tiny.en.bin")
         
-        print("Initializing Voice Assistant...")
+        # Alternative paths if above don't exist
+        if not os.path.exists(self.whisper_path):
+            self.whisper_path = "../whisper.cpp/build/bin/whisper-cli"
+        if not os.path.exists(self.whisper_model):
+            self.whisper_model = "./whisper.cpp/models/ggml-tiny.en.bin"
+        
+        print("Initializing Voice Assistant for Raspberry Pi...")
         self.setup_porcupine()
         self.setup_audio()
 
     def setup_porcupine(self):
         """Initialize Porcupine hotword detection"""
         try:
-            # Initialize Porcupine with "Hey Pi" or use built-in keywords
-            # You can use built-in keywords like 'picovoice', 'bumblebee', 'computer', etc.
-            # Or create a custom "Hey Pi" keyword file
+            # Porcupine configuration
+            ACCESS_KEY = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg=="
+            KEYWORD_PATH = "Hey-Raspberry-Pi_en_raspberry-pi_v3_0_0.ppn"
             
-            self.porcupine = pvporcupine.create(
-                access_key = "CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg==", 
-                porcupine = pvporcupine.create(access_key=access_key, keywords=["anjal"]),
-                  # Using built-in keyword, change to custom if you have "Hey Pi"
-                sensitivities=[0.5]  # Adjust sensitivity (0.0 to 1.0)
-            )
+            # Check if custom keyword file exists
+            if not os.path.exists(KEYWORD_PATH):
+                print(f"Warning: Custom keyword file '{KEYWORD_PATH}' not found!")
+                print("Please ensure the .ppn file is in the same directory as this script.")
+                print("Using built-in 'computer' keyword as fallback...")
+                
+                # Fallback to built-in keyword
+                self.porcupine = pvporcupine.create(
+                    access_key=ACCESS_KEY,
+                    keywords=['computer'],
+                    sensitivities=[0.5]
+                )
+                self.wake_word = "computer"
+            else:
+                # Use custom "Hey Raspberry Pi" keyword
+                self.porcupine = pvporcupine.create(
+                    access_key=ACCESS_KEY,
+                    keyword_paths=[KEYWORD_PATH],
+                    sensitivities=[0.5]  # Adjust sensitivity (0.0 to 1.0)
+                )
+                self.wake_word = "Hey Raspberry Pi"
             
-            print(f"Porcupine initialized. Listening for wake word...")
+            print(f"Porcupine initialized successfully!")
+            print(f"Wake word: '{self.wake_word}'")
             print(f"Frame length: {self.porcupine.frame_length}")
             print(f"Sample rate: {self.porcupine.sample_rate}")
             
         except Exception as e:
             print(f"Failed to initialize Porcupine: {e}")
+            print("Common issues:")
+            print("1. Invalid access key")
+            print("2. Missing .ppn keyword file")
+            print("3. Porcupine library not installed: pip3 install pvporcupine")
             sys.exit(1)
 
     def setup_audio(self):
@@ -88,8 +115,8 @@ class VoiceAssistant:
 
     def listen_for_hotword(self):
         """Listen continuously for the hotword"""
-        print("\n🎤 Listening for wake word 'picovoice'...")
-        print("Say 'picovoice' to activate the assistant")
+        print(f"\n🎤 Listening for wake word '{self.wake_word}'...")
+        print(f"Say '{self.wake_word}' to activate the assistant")
         
         try:
             while self.is_running:
@@ -99,9 +126,9 @@ class VoiceAssistant:
                 keyword_index = self.porcupine.process(pcm)
                 
                 if keyword_index >= 0:
-                    print("\n🔊 Wake word detected! Listening for your question...")
+                    print(f"\n🔊 Wake word '{self.wake_word}' detected! Listening for your question...")
                     self.handle_voice_command()
-                    print("\n🎤 Listening for wake word 'picovoice'...")
+                    print(f"\n🎤 Listening for wake word '{self.wake_word}'...")
                     
         except Exception as e:
             print(f"Error in hotword detection: {e}")
@@ -141,26 +168,39 @@ class VoiceAssistant:
             print(f"Error handling voice command: {e}")
 
     def record_command(self, filename, duration=5):
-        """Record audio command"""
+        """Record audio command - Raspberry Pi optimized"""
         try:
-            cmd = [
-                'arecord',
-                '-D', 'default',
-                '-f', 'S16_LE',
-                '-r', '16000',
-                '-c', '1',
-                '-t', 'wav',
-                '-d', str(duration),
-                filename
+            # Try multiple audio recording approaches for Raspberry Pi
+            recording_commands = [
+                # First try: default ALSA device
+                ['arecord', '-D', 'default', '-f', 'S16_LE', '-r', '16000', '-c', '1', '-t', 'wav', '-d', str(duration), filename],
+                # Second try: plughw device
+                ['arecord', '-D', 'plughw:1,0', '-f', 'S16_LE', '-r', '16000', '-c', '1', '-t', 'wav', '-d', str(duration), filename],
+                # Third try: hw device
+                ['arecord', '-D', 'hw:1,0', '-f', 'S16_LE', '-r', '16000', '-c', '1', '-t', 'wav', '-d', str(duration), filename]
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=duration+2)
+            for cmd in recording_commands:
+                try:
+                    print(f"Trying recording with: {' '.join(cmd[:3])}")
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=duration+3)
+                    
+                    if result.returncode == 0 and os.path.exists(filename) and os.path.getsize(filename) > 1000:  # At least 1KB
+                        print("✓ Recording successful")
+                        return True
+                    else:
+                        print(f"Recording attempt failed: {result.stderr}")
+                        continue
+                        
+                except subprocess.TimeoutExpired:
+                    print("Recording timed out, trying next method...")
+                    continue
+                except Exception as e:
+                    print(f"Recording error: {e}, trying next method...")
+                    continue
             
-            if result.returncode == 0 and os.path.exists(filename) and os.path.getsize(filename) > 0:
-                return True
-            else:
-                print(f"Recording failed: {result.stderr}")
-                return False
+            print("❌ All recording methods failed")
+            return False
                 
         except Exception as e:
             print(f"Recording error: {e}")
@@ -257,10 +297,11 @@ class VoiceAssistant:
     def run(self):
         """Main run loop"""
         print("="*60)
-        print("🤖 OFFLINE VOICE ASSISTANT READY")
+        print("🤖 RASPBERRY PI OFFLINE VOICE ASSISTANT")
         print("="*60)
-        print("Wake word: 'picovoice'")
+        print(f"Wake word: '{self.wake_word}'")
         print("Press Ctrl+C to exit")
+        print("Environment: Raspberry Pi optimized")
         print("="*60)
         
         # Set up signal handler
@@ -276,31 +317,126 @@ class VoiceAssistant:
             self.cleanup()
 
 def main():
-    """Main function"""
+    """Main function with Raspberry Pi environment setup"""
+    print("🍓 Raspberry Pi Voice Assistant Setup")
+    print("="*50)
+    
+    # Environment checks for Raspberry Pi
+    print("Checking Raspberry Pi environment...")
+    
+    # Check if running on Raspberry Pi
+    try:
+        with open('/proc/cpuinfo', 'r') as f:
+            cpuinfo = f.read()
+            if 'Raspberry Pi' in cpuinfo:
+                print("✓ Running on Raspberry Pi")
+            else:
+                print("⚠ Not detected as Raspberry Pi, but continuing...")
+    except:
+        print("⚠ Could not detect system type")
+    
+    # Check audio setup
+    print("\nChecking audio devices...")
+    try:
+        result = subprocess.run(['arecord', '-l'], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("✓ Audio recording devices available")
+            # Print available devices for debugging
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'card' in line.lower():
+                    print(f"  {line.strip()}")
+        else:
+            print("❌ No audio recording devices found")
+    except:
+        print("❌ arecord not available")
+    
     # Check dependencies
     dependencies = {
         'arecord': 'sudo apt install alsa-utils',
-        'espeak': 'sudo apt install espeak',
+        'espeak': 'sudo apt install espeak', 
         'ollama': 'curl -fsSL https://ollama.com/install.sh | sh'
     }
     
+    print("\nChecking dependencies...")
     missing_deps = []
     for cmd, install_cmd in dependencies.items():
         try:
-            subprocess.run([cmd, '--help'], capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            result = subprocess.run([cmd, '--help'], capture_output=True, timeout=5)
+            if result.returncode == 0 or 'usage' in result.stderr.lower():
+                print(f"✓ {cmd} available")
+            else:
+                missing_deps.append(f"{cmd}: {install_cmd}")
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             missing_deps.append(f"{cmd}: {install_cmd}")
+            print(f"❌ {cmd} not found")
+    
+    # Check Ollama service
+    print("\nChecking Ollama...")
+    try:
+        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=10)
+        if 'phi' in result.stdout:
+            print("✓ Ollama with Phi model ready")
+        else:
+            print("⚠ Phi model not found. Run: ollama pull phi")
+    except Exception as e:
+        print(f"❌ Ollama not ready: {e}")
+        missing_deps.append("ollama: curl -fsSL https://ollama.com/install.sh | sh && ollama pull phi")
+    
+    # Check Whisper
+    whisper_paths = [
+        os.path.expanduser("~/whisper.cpp/build/bin/whisper-cli"),
+        "../whisper.cpp/build/bin/whisper-cli",
+        "./whisper.cpp/build/bin/whisper-cli"
+    ]
+    
+    whisper_found = False
+    for path in whisper_paths:
+        if os.path.exists(path):
+            print(f"✓ Whisper found at: {path}")
+            whisper_found = True
+            break
+    
+    if not whisper_found:
+        print("❌ Whisper not found. Build it with:")
+        print("  git clone https://github.com/ggerganov/whisper.cpp")
+        print("  cd whisper.cpp && make && ./models/download-ggml-model.sh tiny.en")
+    
+    # Check for .ppn file
+    keyword_file = "Hey-Raspberry-Pi_en_raspberry-pi_v3_0_0.ppn"
+    if os.path.exists(keyword_file):
+        print(f"✓ Custom wake word file found: {keyword_file}")
+    else:
+        print(f"⚠ Custom wake word file not found: {keyword_file}")
+        print("  Will use fallback 'computer' keyword")
     
     if missing_deps:
-        print("Missing dependencies:")
+        print(f"\n❌ Missing dependencies detected:")
         for dep in missing_deps:
             print(f"  - {dep}")
         print("\nPlease install missing dependencies and try again.")
         return
     
+    print(f"\n✓ Environment check complete!")
+    print("="*50)
+    
+    # Set up audio environment for Raspberry Pi
+    try:
+        # Force audio output to 3.5mm jack (helpful for RPi)
+        subprocess.run(['amixer', 'cset', 'numid=3', '1'], capture_output=True)
+        print("Audio output set to 3.5mm jack")
+    except:
+        pass
+    
     # Initialize and run the voice assistant
-    assistant = VoiceAssistant()
-    assistant.run()
+    try:
+        assistant = VoiceAssistant()
+        assistant.run()
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    except Exception as e:
+        print(f"\nFatal error: {e}")
+        print("Check the troubleshooting steps above.")
 
 if __name__ == "__main__":
     main()
