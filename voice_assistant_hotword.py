@@ -5,7 +5,14 @@ import os
 import time
 
 # Init Porcupine for hotword "Hey Pico" (free)
-porcupine = pvporcupine.create(keywords=["picovoice"])  # "picovoice" = free hotword
+import pvporcupine
+
+
+porcupine = pvporcupine.create(
+  access_key='CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg==',
+  keywords=['picovoice', 'bumblebee']
+)
+ # "picovoice" = free hotword
 
 pa = pyaudio.PyAudio()
 stream = pa.open(
