@@ -4,16 +4,13 @@ import struct
 import os
 import time
 
-# Init Porcupine for hotword "Hey Pico" (free)
-import pvporcupine
-
-
+# Initialize Porcupine with your offline keyword (.ppn file)
 porcupine = pvporcupine.create(
-  access_key='CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg==',
-  keywords=['picovoice', 'bumblebee']
+    access_key='CnNEQfm996S877kY+Ml+GSSqdOb/IgW5CKVUSXzasBWK8+SRlwfeDg==',
+    keyword_paths=['Hey-Raspberry-Pi_en_raspberry-pi_v3_0_0.ppn']
 )
- # "picovoice" = free hotword
 
+# Setup microphone input stream
 pa = pyaudio.PyAudio()
 stream = pa.open(
     rate=porcupine.sample_rate,
@@ -23,37 +20,40 @@ stream = pa.open(
     frames_per_buffer=porcupine.frame_length
 )
 
-print("🎤 Say 'Hey Pi' to activate assistant...")
+print("🎤 Say 'Hey Raspberry Pi' to activate assistant...")
 
 try:
     while True:
+        # Read audio frames from mic
         pcm = stream.read(porcupine.frame_length, exception_on_overflow=False)
         pcm = struct.unpack_from("h" * porcupine.frame_length, pcm)
 
+        # Hotword detection
         if porcupine.process(pcm):
             print("🟢 Hotword Detected! Recording your question...")
 
-            # Record 5 seconds audio
+            # Record audio for 5 seconds
             os.system("arecord -f cd -t wav -d 5 -r 16000 input.wav")
 
-            # Transcribe using whisper.cpp
-            os.system("../whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f input.wav > transcript.txt")
-            # Extract last line of transcript
+            # Transcribe with whisper.cpp
+            os.system("./whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f input.wav > transcript.txt")
+
+            # Read last line as the question
             with open("transcript.txt", "r") as f:
                 lines = f.readlines()
                 question = lines[-1].strip()
 
             print("🧠 You said:", question)
 
-            # Run Ollama model
+            # Generate response using Ollama + Phi model
             print("🤖 Thinking...")
-            response = os.popen(f"echo \"{question}\" | ollama run phi").read()
+            response = os.popen(f"echo \"{question}\" | ollama run phi").read().strip()
             print("💬", response)
 
-            # Speak the response
+            # Speak response
             os.system(f"espeak \"{response}\"")
 
-            # Optional: Cleanup
+            # Cleanup
             os.remove("input.wav")
             os.remove("transcript.txt")
 
